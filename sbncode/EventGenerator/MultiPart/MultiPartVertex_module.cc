@@ -69,8 +69,12 @@ public:
 
     std::array<double, 3U> extractDirection() const;
     void GenMomentum(const PartGenParam& param, const double& mass, double& px, double& py, double& pz);
+    
+    void GenMomentum(const PartGenParam& param, const double& mass, double& px, double& py, double& pz, bool& same_range);
 
+    void GenMomentumSF(const double& sf, const double& mass, const double& p, double &p_sf);
     std::vector<size_t> GenParticles() const;
+
 
 private:
 
@@ -153,6 +157,8 @@ MultiPartVertex::MultiPartVertex(fhicl::ParameterSet const & p)
 
     auto kerange_v  = part_cfg.get<std::vector<std::vector<double> > > ("KERange");
     auto momrange_v = part_cfg.get<std::vector<std::vector<double> > > ("MomRange");
+
+    //auto intKEthres = part_cfg.get<double>("IntKEThreshold", 1);
 
     if( (kerange_v.empty() && momrange_v.empty()) ||
        (!kerange_v.empty() && !momrange_v.empty()) ) {
@@ -420,7 +426,7 @@ void MultiPartVertex::GenMomentum(const PartGenParam& param, const double& mass,
     if(param.use_mom)
         tot_energy = sqrt(cet::square(fFlatRandom->fire(param.kerange[0],param.kerange[1])) + cet::square(mass));
     else
-        tot_energy = fFlatRandom->fire(param.kerange[0],param.kerange[1]) + mass;
+      tot_energy = fFlatRandom->fire(param.kerange[0],param.kerange[1]) + mass;
 
     double mom_mag = sqrt(cet::square(tot_energy) - cet::square(mass));
 
@@ -446,6 +452,48 @@ void MultiPartVertex::GenMomentum(const PartGenParam& param, const double& mass,
 
 }
 
+void MultiPartVertex::GenMomentum(const PartGenParam& param, const double& mass, double& px, double& py, double& pz, bool& same_range) {
+
+  if (!same_range){
+    GenMomentum(param, mass, px, py, pz);
+  }
+  else{
+  double tot_energy = 0;
+  if(param.use_mom)
+    tot_energy = sqrt(cet::square(fFlatRandom->fire(param.kerange[0],param.kerange[1])) + cet::square(mass));
+  else
+    tot_energy = fFlatRandom->fire(param.kerange[0],1) + mass;
+
+  double mom_mag = sqrt(cet::square(tot_energy) - cet::square(mass));
+
+  /* Generating unit vector with uniform distribution                                                                                               
+   * in direction = over the sphere.                                                                                                                
+   *                                                                                                                                                
+   * It is sufficient to draw a normal variable in                                                                                                  
+   * each direction and normalize.                                                                                                                  
+   *                                                                                                                                                
+   * https://mathworld.wolfram.com/SpherePointPicking.html                                                                                          
+   */
+
+  std::array<double, 3U> p = extractDirection();
+  px = p[0]; py = p[1]; pz = p[2];
+
+  if(_debug>1)
+    std::cout << "    Direction : (" << px << "," << py << "," << pz << ")" << std::endl
+	      << "    Momentum  : " << mom_mag << " [MeV/c]" << std::endl
+	      << "    Energy    : " << tot_energy << " [MeV/c^2]" << std::endl;
+  px *= mom_mag;
+  py *= mom_mag;
+  pz *= mom_mag;
+  }
+}
+
+
+void MultiPartVertex::GenMomentumSF(const double& sf, const double& m, const double& p, double& p_sf)
+{
+  p_sf = sqrt( sf*( 2*(sf-1)*cet::square(m)-2*(sf-1)*m*sqrt(cet::square(m)+cet::square(p))+sf*cet::square(p) ) )/p;
+}
+
 void MultiPartVertex::produce(art::Event & e)
 {
     if(_debug>0) std::cout << "Processing a new event..." << std::endl;
@@ -464,6 +512,13 @@ void MultiPartVertex::produce(art::Event & e)
 
     std::vector<simb::MCParticle> part_v;
 
+    std::vector<double> E_vec;
+    std::vector<double> mass_vec;
+    std::vector<int> pdg_vec;
+    std::vector<double> px_vec;
+    std::vector<double> py_vec;
+    std::vector<double> pz_vec;
+
     auto const param_idx_v = GenParticles();
     if(_debug)
         std::cout << "Event Vertex @ (" << x << "," << y << "," << z << ") ... " << param_idx_v.size() << " particles..." << std::endl;
@@ -471,18 +526,89 @@ void MultiPartVertex::produce(art::Event & e)
     for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
         auto const& param = _param_v[param_idx_v[idx]];
         double px,py,pz;
+	bool same_range=true;
         // decide which particle
         size_t pdg_index = (size_t)(fFlatRandom->fire(0,param.pdg.size()-1.e-10));
         auto const& pdg  = param.pdg[pdg_index];
         auto const& mass = param.mass[pdg_index];
         if(_debug) std::cout << "  " << idx << "th instance PDG " << pdg << std::endl;
-        GenMomentum(param,mass,px,py,pz);
-        TLorentzVector mom(px,py,pz,sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
+        GenMomentum(param,mass,px,py,pz,same_range);
+	E_vec.push_back(sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
+        mass_vec.push_back(mass);
+        pdg_vec.push_back(pdg);
+        px_vec.push_back(px);
+        py_vec.push_back(py);
+        pz_vec.push_back(pz);
+
+        /*TLorentzVector mom(px,py,pz,sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
         //simb::MCParticle part(mct.NParticles(), pdg, "primary", 0, mass, 1);
         simb::MCParticle part(part_v.size(), pdg, "primary", 0, mass, 1);
         part.AddTrajectoryPoint(pos,mom);
-        part_v.emplace_back(std::move(part));
+        part_v.emplace_back(std::move(part));*/
     }
+
+    double total_KE = 0;
+    for (size_t idx=0; idx<E_vec.size(); ++idx){
+      total_KE += (E_vec[idx]-mass_vec[idx]);
+      if(_debug) std::cout << "E: "<< E_vec[idx] <<" , m: "<< mass_vec[idx]<< " , KE: "<< E_vec[idx]-mass_vec[idx]<< std::endl;
+    }
+    if(_debug) std::cout << "total KE: "<< total_KE << std::endl;
+    
+    if (total_KE>1.){
+      
+      for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
+	auto const& param = _param_v[param_idx_v[idx]];
+
+	if(param.kerange[1]!=1){
+	// lepton scale here.
+	  double mom_sf = 1;
+	  double temp_p = sqrt(cet::square(px_vec[idx])+cet::square(py_vec[idx])+cet::square(pz_vec[idx]));
+	  if(_debug) std::cout << "KE range: "<< param.kerange[1] <<  " , pdg :  " << pdg_vec[idx] << std::endl;
+	  GenMomentumSF(param.kerange[1], mass_vec[idx], temp_p, mom_sf);
+          if(_debug) std::cout << "particle KE sf: "<< param.kerange[1] << ", p : "<< temp_p << " , mass :  " << mass_vec[idx]<< " , mom_sf: "<< mom_sf << std::endl;
+          double E_scaled = mass_vec[idx]+param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
+          if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
+          TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
+	  simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	  part.AddTrajectoryPoint(pos,mom);
+	  part_v.emplace_back(std::move(part));
+	}
+	else{
+	  TLorentzVector mom(px_vec[idx],py_vec[idx],pz_vec[idx],E_vec[idx]);
+	  simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	  part.AddTrajectoryPoint(pos,mom);
+	  part_v.emplace_back(std::move(part));
+	}
+	//simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+        //part.AddTrajectoryPoint(pos,mom);
+        //part_v.emplace_back(std::move(part));
+      }
+
+    }
+
+    else{
+
+      double gen_total_KE = fFlatRandom->fire(0,1);      
+      double total_KE_sf = gen_total_KE/total_KE; 
+      if(_debug) std::cout << "gen_total_KE: "<< gen_total_KE <<  " , KE scale factor :  " << total_KE_sf << std::endl;
+
+      for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
+	auto const& param = _param_v[param_idx_v[idx]];
+	double mom_sf = 1;
+	double temp_p = sqrt(cet::square(px_vec[idx])+cet::square(py_vec[idx])+cet::square(pz_vec[idx]));
+	if(_debug) std::cout << "KE range: "<< param.kerange[1] <<  " , pdg :  " << pdg_vec[idx] << std::endl;
+	GenMomentumSF(total_KE_sf*param.kerange[1], mass_vec[idx], temp_p, mom_sf);
+	if(_debug) std::cout << "particle KE sf: "<< total_KE_sf*param.kerange[1] << ", p : "<< temp_p << " , mass :  " << mass_vec[idx]<< " , mom_sf: "<< mom_sf << std::endl;	
+	double E_scaled = mass_vec[idx]+total_KE_sf*param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
+	if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
+        TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
+	simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+        part.AddTrajectoryPoint(pos,mom);
+        part_v.emplace_back(std::move(part));
+      }
+
+    }
+
 
     if(_debug) std::cout << "Total number particles: " << mct.NParticles() << std::endl;
 
