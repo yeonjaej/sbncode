@@ -1,0 +1,109 @@
+#include "beamgates_icarus.fcl"
+#include "services_icarus_simulation.fcl"
+#include "largeantmodules_icarus.fcl"
+#include "detsimmodules_ICARUS.fcl"
+#include "multipartvertex_icarus.fcl"
+#include "stage0_icarus_defs.fcl"
+#include "stage0_icarus_mc_defs.fcl"
+#include "stage1_icarus_defs.fcl"
+#include "channelmapping_icarus.fcl"
+#include "mcreco.fcl"
+
+process_name: GenMPVMPR
+
+services:
+{
+  	@table::icarus_gen_services
+	IFDH: {}
+}
+
+source:
+{
+	module_type: EmptyEvent
+	timestampPlugin: { plugin_type: "GeneratedEventTimestamp" }
+	maxEvents: 10
+	firstRun: 1
+	firstEvent: 1
+}
+
+physics:
+{
+
+ producers:
+ {
+	 rns: { module_type: RandomNumberSaver }
+   generator: @local::MultiPartVertex
+   cosmgen:      @local::MultiPartRain
+   beamgate:  @local::icarus_standardbeamgate_BNB  # from beamgates_icarus.fcl
+ }
+
+ simulate: [ rns, generator, cosmgen, beamgate ]
+
+ out_stream: [ out1   ]
+
+ trigger_paths: [simulate]
+
+ end_paths: [out_stream]
+}
+
+#
+# Multi-Particle Vertex generator (MPV)
+#
+physics.producers.generator.DebugMode    : 1
+# Based on BNB spill = 1.6us
+physics.producers.generator.G4Time       : 340.8 # [us]
+physics.producers.generator.G4TimeJitter : 1.6 # [us]
+physics.producers.generator.XRange       : [30,30]
+physics.producers.generator.YRange       : [30,30]
+physics.producers.generator.ZRange       : [30,30]
+#physics.producers.generator.TPCRange     : [[0,0],[0,1],[0,2],[0,3],[1,0],[1,1],[1,2],[1,3]]
+physics.producers.generator.TPCRange     : [[0,0],[0,1],[0,2],[0,3]] #[1,0],[1,1],[1,2],[1,3]]
+physics.producers.generator.MultiMax     : 6
+physics.producers.generator.MultiMin     : 2
+physics.producers.generator.ParticleParameter.PDGCode      : [[-11,11,-13,13],     [111],  [211,-211],      [2212]]
+physics.producers.generator.ParticleParameter.MinMulti     : [              1,          0,          0,           0]
+physics.producers.generator.ParticleParameter.MaxMulti     : [              1,          2,          2,           4]
+physics.producers.generator.ParticleParameter.ProbWeight   : [              1,          1,          1,           3]
+physics.producers.generator.ParticleParameter.KERange      : [     [0.05,0.8], [0.05,0.4], [0.05,0.4],  [0.05,0.4]]
+physics.producers.generator.ParticleParameter.MomRange     : []
+
+#
+# Multi-Particle Rain generator (MPR)
+#
+physics.producers.cosmgen.DebugMode    : 1
+# Based on TPC readout window starting at -340us and readout window size is 1638.4us
+physics.producers.cosmgen.G4Time       : 819.2 # [us]
+physics.producers.cosmgen.G4TimeJitter : 1638.4 # [us]
+physics.producers.cosmgen.XRange       : [20,20]
+physics.producers.cosmgen.YRange       : [20,20]
+physics.producers.cosmgen.ZRange       : [20,20]
+physics.producers.cosmgen.DirectInward : true
+#physics.producers.cosmgen.TPCRange     : [[0,0],[0,1],[0,2],[0,3],[1,0],[1,1],[1,2],[1,3]]
+physics.producers.cosmgen.TPCRange     : [[0,0],[0,1],[0,2],[0,3]] #,[1,0],[1,1],[1,2],[1,3]]
+physics.producers.cosmgen.MultiMax     : 15
+physics.producers.cosmgen.MultiMin     : 8
+physics.producers.cosmgen.CosmicDistribution : false
+physics.producers.cosmgen.ParticleParameter.PDGCode      : [   [-13,13],     [11,22],     [2212]]
+physics.producers.cosmgen.ParticleParameter.MinMulti     : [          0,           0,          0]
+physics.producers.cosmgen.ParticleParameter.MaxMulti     : [         15,           5,         15]
+physics.producers.cosmgen.ParticleParameter.ProbWeight   : [          5,           1,          1]
+physics.producers.cosmgen.ParticleParameter.KERange      : [ [0.05,1.0],   [0.05,0.1], [0.05,0.4]]
+physics.producers.cosmgen.ParticleParameter.MomRange     : []
+
+#
+# Services
+#
+
+outputs:
+{
+ out1:
+ {
+   module_type: RootOutput
+   fileName:    "GenMPVMPR_%tc.root"
+   dataTier:    "simulated"
+   compressionLevel: 1
+ }
+}
+
+services.TFileService.fileName: "GenMPVMPR_ana_%tc.root"
+
