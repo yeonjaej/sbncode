@@ -110,6 +110,8 @@ private:
     unsigned short _debug;
 
     unsigned short _use_boost;
+
+  unsigned short _revert;
 };
 
 void MultiPartVertex::abort(const std::string msg) const
@@ -139,7 +141,7 @@ MultiPartVertex::MultiPartVertex(fhicl::ParameterSet const & p)
     produces< sumdata::RunData, art::InRun >();
 
     _debug = p.get<unsigned short>("DebugMode",0);
-
+    _revert = p.get<unsigned short>("Revert",0);
     _use_boost = p.get<unsigned short>("UseBoost",0);
     _t0 = p.get<double>("G4Time");
     _t0_sigma = p.get<double>("G4TimeJitter");
@@ -580,7 +582,14 @@ void MultiPartVertex::produce(art::Event & e)
         auto const& pdg  = param.pdg[pdg_index];
         auto const& mass = param.mass[pdg_index];
         if(_debug) std::cout << "  " << idx << "th instance PDG " << pdg << std::endl;
-        GenMomentum(param,mass,px,py,pz,same_range);
+
+	if (_revert) {
+	  GenMomentum(param,mass,px,py,pz);
+	}
+	else {
+	  GenMomentum(param,mass,px,py,pz,same_range);
+	}
+
         TLorentzVector mom(px,py,pz,sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
 	if(_use_boost){
 	  mom.Boost(bx,by,bz);	
@@ -597,68 +606,78 @@ void MultiPartVertex::produce(art::Event & e)
         
     }
 
-    double total_KE = 0;
-    for (size_t idx=0; idx<E_vec.size(); ++idx){
-      total_KE += (E_vec[idx]-mass_vec[idx]);
-      if(_debug) std::cout << "E: "<< E_vec[idx] <<" , m: "<< mass_vec[idx]<< " , KE: "<< E_vec[idx]-mass_vec[idx]<< std::endl;
-    }
-    if(_debug) std::cout << "total KE: "<< total_KE << std::endl;
-    
-    if (total_KE>1.){
-      
+    if(_revert){
       for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
-	auto const& param = _param_v[param_idx_v[idx]];
-
-	if(param.kerange[1]!=1){
-	  // lepton scale here.
-	  double mom_sf = 1;
-	  double temp_p = sqrt(cet::square(px_vec[idx])+cet::square(py_vec[idx])+cet::square(pz_vec[idx]));
-	  if(_debug) std::cout << "KE range: "<< param.kerange[1] <<  " , pdg :  " << pdg_vec[idx] << std::endl;
-	  GenMomentumSF(param.kerange[1], mass_vec[idx], temp_p, mom_sf);
-          if(_debug) std::cout << "particle KE sf: "<< param.kerange[1] << ", p : "<< temp_p << " , mass :  " << mass_vec[idx]<< " , mom_sf: "<< mom_sf << std::endl;
-          double E_scaled = mass_vec[idx]+param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
-          if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
-          TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
-	  simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
-	  part.AddTrajectoryPoint(pos,mom);
-	  part_v.emplace_back(std::move(part));
-	}
-	else{
-	  TLorentzVector mom(px_vec[idx],py_vec[idx],pz_vec[idx],E_vec[idx]);
-	  simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
-	  part.AddTrajectoryPoint(pos,mom);
-	  part_v.emplace_back(std::move(part));
-	}
-	//simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
-        //part.AddTrajectoryPoint(pos,mom);
-        //part_v.emplace_back(std::move(part));
-      }
-
-    }
-
-    else{
-
-      double gen_total_KE = fFlatRandom->fire(0,1);      
-      double total_KE_sf = gen_total_KE/total_KE; 
-      if(_debug) std::cout << "gen_total_KE: "<< gen_total_KE <<  " , KE scale factor :  " << total_KE_sf << std::endl;
-
-      for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
-	auto const& param = _param_v[param_idx_v[idx]];
-	double mom_sf = 1;
-	double temp_p = sqrt(cet::square(px_vec[idx])+cet::square(py_vec[idx])+cet::square(pz_vec[idx]));
-	if(_debug) std::cout << "KE range: "<< param.kerange[1] <<  " , pdg :  " << pdg_vec[idx] << std::endl;
-	GenMomentumSF(total_KE_sf*param.kerange[1], mass_vec[idx], temp_p, mom_sf);
-	if(_debug) std::cout << "particle KE sf: "<< total_KE_sf*param.kerange[1] << ", p : "<< temp_p << " , mass :  " << mass_vec[idx]<< " , mom_sf: "<< mom_sf << std::endl;
-	double E_scaled = mass_vec[idx]+total_KE_sf*param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
-	if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
-        TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
+	TLorentzVector mom(px_vec[idx],py_vec[idx],pz_vec[idx],E_vec[idx]);
 	simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
         part.AddTrajectoryPoint(pos,mom);
         part_v.emplace_back(std::move(part));
       }
-
     }
+    else{
 
+      double total_KE = 0;
+      for (size_t idx=0; idx<E_vec.size(); ++idx){
+	total_KE += (E_vec[idx]-mass_vec[idx]);
+	if(_debug) std::cout << "E: "<< E_vec[idx] <<" , m: "<< mass_vec[idx]<< " , KE: "<< E_vec[idx]-mass_vec[idx]<< std::endl;
+      }
+      if(_debug) std::cout << "total KE: "<< total_KE << std::endl;
+    
+      if (total_KE>1.){
+      
+	for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
+	  auto const& param = _param_v[param_idx_v[idx]];
+
+	  if(param.kerange[1]!=1){
+	    // lepton scale here.
+	    double mom_sf = 1;
+	    double temp_p = sqrt(cet::square(px_vec[idx])+cet::square(py_vec[idx])+cet::square(pz_vec[idx]));
+	    if(_debug) std::cout << "KE range: "<< param.kerange[1] <<  " , pdg :  " << pdg_vec[idx] << std::endl;
+	    GenMomentumSF(param.kerange[1], mass_vec[idx], temp_p, mom_sf);
+	    if(_debug) std::cout << "particle KE sf: "<< param.kerange[1] << ", p : "<< temp_p << " , mass :  " << mass_vec[idx]<< " , mom_sf: "<< mom_sf << std::endl;
+	    double E_scaled = mass_vec[idx]+param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
+	    if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
+	    TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
+	    simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	    part.AddTrajectoryPoint(pos,mom);
+	    part_v.emplace_back(std::move(part));
+	  }
+	  else{
+	    TLorentzVector mom(px_vec[idx],py_vec[idx],pz_vec[idx],E_vec[idx]);
+	    simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	    part.AddTrajectoryPoint(pos,mom);
+	    part_v.emplace_back(std::move(part));
+	  }
+	  //simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	  //part.AddTrajectoryPoint(pos,mom);
+	  //part_v.emplace_back(std::move(part));
+	}
+
+      }
+
+      else{
+
+	double gen_total_KE = fFlatRandom->fire(0,1);      
+	double total_KE_sf = gen_total_KE/total_KE; 
+	if(_debug) std::cout << "gen_total_KE: "<< gen_total_KE <<  " , KE scale factor :  " << total_KE_sf << std::endl;
+
+	for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
+	  auto const& param = _param_v[param_idx_v[idx]];
+	  double mom_sf = 1;
+	  double temp_p = sqrt(cet::square(px_vec[idx])+cet::square(py_vec[idx])+cet::square(pz_vec[idx]));
+	  if(_debug) std::cout << "KE range: "<< param.kerange[1] <<  " , pdg :  " << pdg_vec[idx] << std::endl;
+	  GenMomentumSF(total_KE_sf*param.kerange[1], mass_vec[idx], temp_p, mom_sf);
+	  if(_debug) std::cout << "particle KE sf: "<< total_KE_sf*param.kerange[1] << ", p : "<< temp_p << " , mass :  " << mass_vec[idx]<< " , mom_sf: "<< mom_sf << std::endl;
+	  double E_scaled = mass_vec[idx]+total_KE_sf*param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
+	  if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
+	  TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
+	  simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	  part.AddTrajectoryPoint(pos,mom);
+	  part_v.emplace_back(std::move(part));
+	}
+
+      }
+    }
     if(_debug) std::cout << "Total number particles: " << mct.NParticles() << std::endl;
 
     simb::MCParticle nu(mct.NParticles(), 16, "primary", mct.NParticles(), 0, 0);
@@ -667,10 +686,10 @@ void MultiPartVertex::produce(art::Event & e)
     double pz=0;
     double en=0;
     for(auto const& part : part_v) {
-        px += part.Momentum().Px();
-        py += part.Momentum().Py();
-        pz += part.Momentum().Pz();
-        en += part.Momentum().E();
+      px += part.Momentum().Px();
+      py += part.Momentum().Py();
+      pz += part.Momentum().Pz();
+      en += part.Momentum().E();
     }
     TLorentzVector mom(px,py,pz,en);
     nu.AddTrajectoryPoint(pos,mom);
