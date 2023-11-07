@@ -119,7 +119,8 @@ MultiPartVertex::~MultiPartVertex()
 
 MultiPartVertex::MultiPartVertex(fhicl::ParameterSet const & p)
 : EDProducer(p)
-, fFlatEngine(art::ServiceHandle<rndm::NuRandomService>()->createEngine(*this, "HepJamesRandom", "GenVertex"))
+, fFlatEngine(art::ServiceHandle<rndm::NuRandomService>()->registerAndSeedEngine(
+                createEngine(0, "HepJamesRandom", "GenVertex"), "HepJamesRandom", "GenVertex"))
   //, fFlatEngine(art::ServiceHandle<rndm::NuRandomService>()->createEngine(*this, "HepJamesRandom", "Gen", p, "Seed"))
 // Initialize member data here.
 {
@@ -312,7 +313,7 @@ void MultiPartVertex::beginRun(art::Run& run)
 
     std::unique_ptr<sumdata::RunData> runData(new sumdata::RunData(geo->DetectorName()));
 
-    run.put(std::move(runData));
+    run.put(std::move(runData), art::fullRun());
 
     return;
 }
