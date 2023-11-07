@@ -477,15 +477,6 @@ void MultiPartVertex::GenMomentum(const PartGenParam& param, const double& mass,
 
     double mom_mag = sqrt(cet::square(tot_energy) - cet::square(mass));
 
-    /* Generating unit vector with uniform distribution
-     * in direction = over the sphere.
-     *
-     * It is sufficient to draw a normal variable in
-     * each direction and normalize.
-     *
-     * https://mathworld.wolfram.com/SpherePointPicking.html
-     */
-
     std::array<double, 3U> p = extractDirection();
     px = p[0]; py = p[1]; pz = p[2];
 
@@ -512,15 +503,6 @@ void MultiPartVertex::GenMomentum(const PartGenParam& param, const double& mass,
       tot_energy = fFlatRandom->fire(param.kerange[0],1) + mass;
 
     double mom_mag = sqrt(cet::square(tot_energy) - cet::square(mass));
-
-    /* Generating unit vector with uniform distribution                                                                                               
-     * in direction = over the sphere.                                                                                                                
-     *                                                                                                                                                
-     * It is sufficient to draw a normal variable in                                                                                                  
-     * each direction and normalize.                                                                                                                  
-     *                                                                                                                                                
-     * https://mathworld.wolfram.com/SpherePointPicking.html                                                                                          
-     */
 
     std::array<double, 3U> p = extractDirection();
     px = p[0]; py = p[1]; pz = p[2];
@@ -589,13 +571,17 @@ void MultiPartVertex::produce(art::Event & e)
 	else {
 	  GenMomentum(param,mass,px,py,pz,same_range);
 	}
-
-        TLorentzVector mom(px,py,pz,sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
-	if(_use_boost){
+	// moving boost
+	//
+        //TLorentzVector mom(px,py,pz,sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
+	//
+	/*	
+       if(_use_boost){
 	  mom.Boost(bx,by,bz);	
 	  px=mom.X();
 	  py=mom.Y();
-	  pz=mom.Z();}
+	  pz=mom.Z();
+	  }*/
 
 	E_vec.push_back(sqrt(cet::square(px)+cet::square(py)+cet::square(pz)+cet::square(mass)));
         mass_vec.push_back(mass);
@@ -609,6 +595,7 @@ void MultiPartVertex::produce(art::Event & e)
     if(_revert){
       for(size_t idx=0; idx<param_idx_v.size(); ++idx) {
 	TLorentzVector mom(px_vec[idx],py_vec[idx],pz_vec[idx],E_vec[idx]);
+	if (_use_boost) mom.Boost(bx, by, bz);
 	simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
         part.AddTrajectoryPoint(pos,mom);
         part_v.emplace_back(std::move(part));
@@ -638,12 +625,14 @@ void MultiPartVertex::produce(art::Event & e)
 	    double E_scaled = mass_vec[idx]+param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
 	    if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
 	    TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
-	    simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
+	    if (_use_boost) mom.Boost(bx, by, bz);
+            simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
 	    part.AddTrajectoryPoint(pos,mom);
 	    part_v.emplace_back(std::move(part));
 	  }
 	  else{
 	    TLorentzVector mom(px_vec[idx],py_vec[idx],pz_vec[idx],E_vec[idx]);
+	    if (_use_boost) mom.Boost(bx, by, bz);
 	    simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
 	    part.AddTrajectoryPoint(pos,mom);
 	    part_v.emplace_back(std::move(part));
@@ -671,6 +660,7 @@ void MultiPartVertex::produce(art::Event & e)
 	  double E_scaled = mass_vec[idx]+total_KE_sf*param.kerange[1]*(E_vec[idx]-mass_vec[idx]);
 	  if(_debug) std::cout << "particle E : "<< E_vec[idx]<< " , scaled E : " << E_scaled << std::endl;
 	  TLorentzVector mom(mom_sf*px_vec[idx],mom_sf*py_vec[idx],mom_sf*pz_vec[idx],E_scaled);
+	  if (_use_boost) mom.Boost(bx, by, bz);
 	  simb::MCParticle part(part_v.size(), pdg_vec[idx], "primary", 0, mass_vec[idx], 1);
 	  part.AddTrajectoryPoint(pos,mom);
 	  part_v.emplace_back(std::move(part));
